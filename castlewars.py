@@ -8,6 +8,7 @@ import players
 
 DEFAULT_WIN_CONDITION = "destroy_castle"  # maximum_damage
 DEFAULT_MATCH_LENGTH = 100
+DEFAULT_GAME_LENGTH = 100
 DEFAULT_NUM_LANES = 3
 DEFAULT_NUM_CELLS = 5
 DEFAULT_CASTLE_HP = 30
@@ -67,7 +68,18 @@ class Lane:
 class Castle:
     def __init__(self, hp=DEFAULT_CASTLE_HP):
         self.hp = hp
-        self.arsenal = {c: 0 for c in CHARACTERS}  # {character: turns to ready}
+        self.arsenal = {c: 0 for c in CHARACTERS}  # {character: cooldown turns remaining}
+
+    def spawn(self, char):
+        # release a character and update the cooldowns
+        assert(self.arsenal[char] == 0)
+        self.arsenal[char] += CHARACTERS[char]['cooldown']
+        for c, cd in self.arsenal.iteritems():
+            if cd > 0:
+                cd -= 1
+
+    def take_damage(self, damage):
+        self.hp -= damage
 
     def dead(self):
         return self.hp <= 0
@@ -83,6 +95,8 @@ class GameBoard:
 
     def resolve(self, moves):
         # here are two (Piece, lane) moves, resolve them
+        for i in BT:
+            self.castles[i].spawn(moves[i][0].name)
         for lane in self.board:
             lanemoves = [None, None]
             for p in BT:
@@ -121,12 +135,12 @@ class Piece:
 
 class Player:
     def __init__(self, pid, strategy):
-        self.strat = strategy
+        self.strategy = strategy
         self.pid = pid  # 0 or 1
 
-    def turn(self, board):
+    def turn(self, match):
         # make a decision: (piece, lane)
-        return self.strat(board, self.pid)
+        return self.strategy(match, self.pid)
 
 
 class Game:
@@ -141,7 +155,7 @@ class Game:
         # play a game to completion
         while True:
             self.play_turn()
-            go = self.gameover()
+            go = self.is_game_over()
             if go is not None:
                 self.history += '__' + str(go)
                 self.winner = go
@@ -156,7 +170,7 @@ class Game:
         movechars = ''.join([moves[i][0].char + str(moves[i][1]) for i in BT])
         self.history += '_' + movechars
 
-    def gameover(self):
+    def is_game_over(self):
         # check the winning condition
         if self.match.win_condition == 'destroy_castle':
             cd = [self.board.castles[c].dead() for c in BT]
@@ -169,6 +183,17 @@ class Game:
                 return 0  # 0 destroyed 1
             else:
                 return None
+        elif self.match.win_condition == 'maximum_damage':
+            if self.turn >= self.match.game_len:
+                cscores = [self.board.castles[c].hp for c in BT]
+                if cscores[0] == cscores[1]:
+                    return "tie"
+                elif cscores[0] > cscores[1]:
+                    return 0
+                else:
+                    return 1
+            else:
+                return None
         else:
             # future winning conditions!
             return "BAD WINNING CONDITION"
@@ -179,17 +204,20 @@ class Match:
                  players,
                  win_condition=DEFAULT_WIN_CONDITION,
                  match_length=DEFAULT_MATCH_LENGTH,
+                 game_length=DEFAULT_GAME_LENGTH,
                  n_lanes=DEFAULT_NUM_LANES,
                  n_cells=DEFAULT_NUM_CELLS,
                  init_castle_hp=DEFAULT_CASTLE_HP):
         self.p = players  # [p0, p1]
         self.win_condition = win_condition
         self.match_len = match_length
+        self.game_len = game_length
         self.n_lanes = n_lanes
         self.n_cells = n_cells
         self.score = [0, 0]  # wins by player 0, player 1 in the match
         self.history = []  # raw history.
         self.init_castle_hp = init_castle_hp
+        self.current_game = None
 
     def write_history(self, filename):
         with open(filename, 'w') as wf:
@@ -200,6 +228,7 @@ class Match:
         outcomes = []
         for i in range(self.match_len):
             game = Game(self)
+            self.current_game = game
             game.play()
             outcomes.append(game.winner)
             self.history.append(game.history)

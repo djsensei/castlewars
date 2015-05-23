@@ -6,7 +6,7 @@ attack: attack power, in HP
 armor: defensive shield, in HP
 hp: health points
 range: attack range, in spaces
-respawn: number of turns to regenerate spawnability
+cooldown: number of turns to regenerate spawnability
 ]
 """
 import json

@@ -23,7 +23,7 @@ Each turn, each player chooses a character to release and a lane to send it out 
 3. *Smash* - If a character survives battle _and_ is within smash range of the enemy castle, it will deal its smash damage to the enemy castle. Huzzah!
 
 ### Characters
-Characters each have the following integer-valued attributes:
+Each character has the following integer-valued attributes:
 
 *  `speed`: number of spaces to move forward per turn
 *  `attack`: attack power

@@ -13,7 +13,7 @@ def safechoice(l):
 
 
 def purely_random(match, pid):
-    options = match.current_game.board.castles[pid].arsenal.options()
+    options = match.current_game.board.castles[pid].options()
     char = safechoice(options)
     if char is not None:
         piece = cw.Piece(char, pid)
@@ -24,7 +24,7 @@ def purely_random(match, pid):
 
 
 def jam_random_pieces(match, pid):
-    options = match.current_game.board.castles[pid].arsenal.options()
+    options = match.current_game.board.castles[pid].options()
     char = safechoice(options)
     if char is not None:
         piece = cw.Piece(char, pid)
@@ -37,3 +37,9 @@ def jam_random_pieces(match, pid):
 def human(match, pid):
     # human player - needs a visible board output and a way to give input
     pass
+
+
+def pawn_train(match, pid):
+    piece = cw.Piece("pawn", pid)
+    lane = choice(range(match.current_game.board.n_lanes))
+    return piece, lane

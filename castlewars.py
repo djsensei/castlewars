@@ -12,7 +12,7 @@ DEFAULT_GAME_LENGTH = 100
 DEFAULT_NUM_LANES = 3
 DEFAULT_NUM_CELLS = 5
 DEFAULT_CASTLE_HP = 30
-BT = (0, 1)
+BT = (0, 1)  # binary tuple. very useful for iterating over teams!
 
 # Load parameters
 PARAMS_FILE = "data/parameters.json"
@@ -27,11 +27,26 @@ class Cell:
         either team at any time. If it contains pieces from both teams:
         BATTLE!
     """
-    def __init__(self):
+    def __init__(self, loc):
+        self.loc = loc  # index in the lane
         self.pieces = [None, None]
 
     def get_teams(self):
         return [p is not None for p in self.pieces]
+
+
+    # def overload(self, team):
+    #     # too many members of one team here
+    #     return len(self.pieces[team]) > 1
+
+    # def pushback(self, team):
+    #     """
+    #     if multiple members of the team are here, keep only the one with
+    #         the highest speed (or whoever was here first)
+    #     return the others or an empty list
+    #     """
+    #     pass
+
 
     def battle(self):
         # both teams are present!
@@ -42,10 +57,10 @@ class Lane:
     """
     A lane of the game board. Made of Cells.
     """
-    def __init__(self, id, n_cells=DEFAULT_NUM_CELLS):
+    def __init__(self, lid, n_cells=DEFAULT_NUM_CELLS):
         self.lid = lid  # lane id
         self.n = n_cells
-        self.cells = [Cell() for _ in range(n_cells)]
+        self.cells = [Cell(i) for i in range(n_cells)]
 
     def is_empty(self):
         return all([c.piece is None for c in self.cells])
@@ -54,21 +69,52 @@ class Lane:
         # is this castle under attack?
         return self.cells[target_castle].get_team()[1 - target_castle]
 
-    def resolve(self, newpieces=(None, None)):  # TODO
+    def resolve(self, newpieces=(None, None)):
+        # resolve a turn for this lane, returning a list of damage to castles
+        # move
+        self._move(newpieces)
+        # battle
+        self._battle()
+        # smash
+        return self._smash()
+
+    def _move(self, newpieces):
         pass
-        # bash other castle if you can
-        # move pieces forward from front to back
-        #    if you hit a teammate, stop
-        # if opponent in range, fire until dead and/or he is
-        #    fire at nearest opponent (starting with same cell)
-        # handle cooldowns and armor regen
-        # board.castles[self.pid].arsenal[piece.name] += piece.cooldown
+
+    def _battle(self):
+        pass
+
+    def _smashable(self):
+        """
+        Return a list of all pieces who can smash their opponent's castle
+        """
+        smashpieces = []
+        for i, c in enumerate(self.cells):
+            c_dist = (self.n - i, i + 1)  # distance to castle for both teams
+            for team in BT:
+                p = c.pieces[team]
+                if p is not None and p.smash_range <= c_dist[team]:
+                    smashpieces.append(p)
+        return smashpieces
+
+    def _smash(self):
+        """
+        Returns a list of smash damage to both castles: [d0, d1]
+        """
+        damage = [0, 0]
+        for piece in self._smashable():
+            damage[1 - piece.team] += piece.smash
+        return damage
+
 
 
 class Castle:
     def __init__(self, hp=DEFAULT_CASTLE_HP):
         self.hp = hp
         self.arsenal = {c: 0 for c in CHARACTERS}  # {character: cooldown turns remaining}
+
+    def options(self):
+        return tuple(c for c, t in self.arsenal.iteritems() if t == 0)
 
     def spawn(self, char):
         # release a character and update the cooldowns
@@ -90,31 +136,41 @@ class GameBoard:
                  n_lanes=DEFAULT_NUM_LANES,
                  n_cells=DEFAULT_NUM_CELLS):
         self.n_lanes = n_lanes
-        self.board = [Lane(i, n_cells) for i in n_lanes]
+        self.board = [Lane(i, n_cells) for i in range(n_lanes)]
         self.castles = [Castle(), Castle()]
 
     def resolve(self, moves):
-        # here are two (Piece, lane) moves, resolve them
+        """
+        Resolves a turn, given two (Piece, lane) moves
+        """
+        # spawn characters
         for i in BT:
-            self.castles[i].spawn(moves[i][0].name)
+            if moves[i] is not None:
+                self.castles[i].spawn(moves[i][0].name)
+        # resolve action in each lane
         for lane in self.board:
             lanemoves = [None, None]
             for p in BT:
-                if moves[p][1] == lane.lid:
+                if moves[p] is not None and moves[p][1] == lane.lid:
                     lanemoves[p] = moves[p][0]
-            lane.resolve(lanemoves)
+            damages = lane.resolve(lanemoves)
+            for i, d in enumerate(damages):
+                self.castles[i].hp -= d
 
 
 class Piece:
     def __init__(self, name, team):
         self.name = name
-        self.char = CHARACTERS[name]['char']
-        self.speed = CHARACTERS[name]['speed']
-        self.attack = CHARACTERS[name]['attack']
-        self.armor = CHARACTERS[name]['armor']
-        self.hp = CHARACTERS[name]['hp']
-        self.range = CHARACTERS[name]['range']
-        self.cooldown = CHARACTERS[name]['cooldown']
+        cd = CHARACTERS[name]
+        self.char = cd['char']
+        self.speed = cd['speed']
+        self.attack = cd['attack']
+        self.smash = cd['smash']
+        self.armor = cd['armor']
+        self.hp = cd['hp']
+        self.attack_range = cd['attack_range']
+        self.smash_range = cd['smash_range']
+        self.cooldown = cd['cooldown']
         self.team = team
 
     def take_damage(self, damage):
@@ -163,9 +219,11 @@ class Game:
 
     def play_turn(self):
         self.turn += 1
+
         # select and resolve moves
-        moves = [self.match.p[i].turn(self.board) for i in BT]
+        moves = [self.match.p[i](self.match, i) for i in BT]
         self.board.resolve(moves)
+
         # update history
         movechars = ''.join([moves[i][0].char + str(moves[i][1]) for i in BT])
         self.history += '_' + movechars
